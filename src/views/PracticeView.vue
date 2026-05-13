@@ -4,7 +4,8 @@ import { ArrowLeft, ArrowRight, Finished, RefreshRight, Select } from '@element-
 
 import { useAuthStore } from '@/stores/auth'
 import { useExamStore } from '@/stores/exam'
-import type { AnswerFeedbackMode, TestAttempt } from '@/types/domain'
+import type { AnswerFeedbackMode, ExamQuestion, TestAttempt } from '@/types/domain'
+import { getAccuracyPercent, getExamGrade } from '@/utils/grading'
 
 const authStore = useAuthStore()
 const examStore = useExamStore()
@@ -14,7 +15,7 @@ const selectedMode = ref<AnswerFeedbackMode>('immediate')
 const finishDialogVisible = ref(false)
 const saveFinishedStats = ref(true)
 const finishEarly = ref(false)
-const answerLabels = ['а', 'б', 'в', 'г']
+const answerLabels = ['а', 'б', 'в', 'г', 'д', 'е', 'ж', 'з']
 
 const ownerId = computed(() => authStore.ownerId)
 const activeAttempt = computed(() => examStore.activeAttempt(ownerId.value))
@@ -47,14 +48,7 @@ const currentAnswer = computed(() => {
 
   return attempt.answers.find((answer) => answer.questionId === question.id) ?? null
 })
-const orderedOptions = computed(() => {
-  const attempt = workingAttempt.value
-  const question = currentQuestion.value
-
-  if (!attempt || !question) {
-    return []
-  }
-
+function getOrderedOptions(question: ExamQuestion, attempt: TestAttempt) {
   const optionOrder = attempt.optionOrderByQuestionId?.[question.id] ?? question.options.map((option) => option.id)
   const optionsById = new Map(question.options.map((option) => [option.id, option]))
 
@@ -65,6 +59,46 @@ const orderedOptions = computed(() => {
       ...option,
       displayLabel: answerLabels[index] ?? `${index + 1}`,
     }))
+}
+
+const orderedOptions = computed(() => {
+  const attempt = workingAttempt.value
+  const question = currentQuestion.value
+
+  if (!attempt || !question) {
+    return []
+  }
+
+  return getOrderedOptions(question, attempt)
+})
+const currentCorrectOption = computed(() => {
+  const question = currentQuestion.value
+
+  if (!question) {
+    return null
+  }
+
+  return orderedOptions.value.find((option) => option.id === question.correctOptionId) ?? null
+})
+const answerFeedbackDescription = computed(() => {
+  const question = currentQuestion.value
+  const answer = currentAnswer.value
+
+  if (!question || !answer?.checkedAt) {
+    return ''
+  }
+
+  const explanation = question.explanation || 'Пояснение будет показано после заполнения вопроса.'
+
+  if (answer.isCorrect) {
+    return explanation
+  }
+
+  const correctAnswer = currentCorrectOption.value
+    ? `Правильный ответ: ${currentCorrectOption.value.displayLabel}) ${currentCorrectOption.value.text}.`
+    : 'Правильный ответ указан в материалах вопроса.'
+
+  return `${correctAnswer} ${explanation}`
 })
 const selectedOptionId = computed({
   get() {
@@ -94,14 +128,22 @@ const selectedQuestionCount = computed(() => examStore.getGeneratedQuestionCount
 const result = computed(() => {
   const attempt = workingAttempt.value
 
-  if (!attempt || attempt.answers.length === 0) {
-    return { correct: 0, total: 0 }
+  if (!attempt) {
+    const percent = 0
+    return { answered: 0, correct: 0, total: 0, percent, grade: getExamGrade(percent) }
   }
 
   const checked = attempt.answers.filter((answer) => answer.checkedAt)
+  const correct = checked.filter((answer) => answer.isCorrect).length
+  const total = attempt.questionIds.length
+  const percent = getAccuracyPercent(correct, total)
+
   return {
-    correct: checked.filter((answer) => answer.isCorrect).length,
-    total: checked.length,
+    answered: checked.length,
+    correct,
+    total,
+    percent,
+    grade: getExamGrade(percent),
   }
 })
 
@@ -248,7 +290,7 @@ function finishAttempt() {
           show-icon
           :closable="false"
           :title="currentAnswer.isCorrect ? 'Верно' : 'Неверно'"
-          :description="currentQuestion.explanation || 'Пояснение будет показано после заполнения вопроса.'"
+          :description="answerFeedbackDescription"
         />
       </el-card>
 
@@ -289,9 +331,13 @@ function finishAttempt() {
       v-if="workingAttempt?.status === 'completed'"
       icon="success"
       title="Попытка завершена"
-      :sub-title="`Проверено ответов: ${result.total}. Верных: ${result.correct}.`"
+      :sub-title="`Отвечено: ${result.answered} из ${result.total}. Верных: ${result.correct}. Точность: ${result.percent}%.`"
     >
       <template #extra>
+        <div class="result-grade">
+          <span>Итоговая оценка</span>
+          <strong :class="`grade-badge grade-badge--${result.grade.tone}`">{{ result.grade.label }}</strong>
+        </div>
         <el-button type="primary" @click="restartAttempt">Начать новую</el-button>
       </template>
     </el-result>

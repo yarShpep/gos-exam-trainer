@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import { CircleCheck, Collection, EditPen, TrendCharts } from '@element-plus/icons-vue'
+import { CircleCheck, Collection, EditPen, Medal, TrendCharts } from '@element-plus/icons-vue'
 
 import { useAuthStore } from '@/stores/auth'
 import { useExamStore } from '@/stores/exam'
+import { getAccuracyPercent, getExamGrade } from '@/utils/grading'
 
 const authStore = useAuthStore()
 const examStore = useExamStore()
@@ -20,13 +21,8 @@ const totalAnswers = computed(() =>
 const correctAnswers = computed(() =>
   Object.values(questionStats.value).reduce((sum, stat) => sum + stat.correctAnswers, 0),
 )
-const accuracy = computed(() => {
-  if (totalAnswers.value === 0) {
-    return 0
-  }
-
-  return Math.round((correctAnswers.value / totalAnswers.value) * 100)
-})
+const accuracy = computed(() => getAccuracyPercent(correctAnswers.value, totalAnswers.value))
+const grade = computed(() => getExamGrade(accuracy.value))
 </script>
 
 <template>
@@ -56,6 +52,12 @@ const accuracy = computed(() => {
         <el-icon><TrendCharts /></el-icon>
         <span>Точность ответов</span>
         <strong>{{ accuracy }}%</strong>
+      </el-card>
+      <el-card shadow="never" class="metric-card">
+        <el-icon><Medal /></el-icon>
+        <span>Общая оценка</span>
+        <strong v-if="totalAnswers > 0" :class="`grade-badge grade-badge--${grade.tone}`">{{ grade.label }}</strong>
+        <strong v-else>—</strong>
       </el-card>
     </div>
 

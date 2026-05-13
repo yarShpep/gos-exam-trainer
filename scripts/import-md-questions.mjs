@@ -11,6 +11,7 @@ const sourceFiles = fs
 
 const materialRegistry = new Map()
 const sharedMaterialRegistry = new Map()
+const optionLabels = 'абвгдежз'
 
 function cleanText(value) {
   return value
@@ -203,7 +204,9 @@ function parseQuestionBlock(block, sectionId, sectionMaterials) {
   const metaPart = metaStart === -1 ? '' : body.slice(metaStart)
   const options = []
 
-  for (const optionMatch of optionPart.matchAll(/^([абвг])\)\s+(.+?)(?=\n[абвг]\)|\n\*\*Правильный ответ:|\n*$)/gms)) {
+  const optionPattern = new RegExp(`^([${optionLabels}])\\)\\s+(.+?)(?=\\n[${optionLabels}]\\)|\\n\\*\\*Правильный ответ:|\\n*$)`, 'gms')
+
+  for (const optionMatch of optionPart.matchAll(optionPattern)) {
     const label = optionMatch[1]
     options.push({
       id: `${sectionId}-q${order}-${slugify(label)}`,
@@ -213,7 +216,7 @@ function parseQuestionBlock(block, sectionId, sectionMaterials) {
   }
 
   const correctLine = metaPart.match(/^\*\*Правильный ответ:\*\*\s*(.+)$/m)?.[1] ?? ''
-  const correctLabel = correctLine.match(/[абвг](?=\))/)?.[0] ?? correctLine.match(/^[абвг]/)?.[0] ?? 'а'
+  const correctLabel = correctLine.match(new RegExp(`[${optionLabels}](?=\\))`))?.[0] ?? correctLine.match(new RegExp(`^[${optionLabels}]`))?.[0] ?? 'а'
   const explanation = metaPart.match(/^\*\*Почему:\*\*\s*(.+)$/m)?.[1] ?? ''
   const sourceLine = metaPart.match(/^\*\*Источник\/материалы:\*\*\s*(.+)$/m)?.[1] ?? ''
   const sourceRefs = splitSourceRefs(sourceLine)

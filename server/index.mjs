@@ -8,7 +8,7 @@ import cors from 'cors'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '..')
-const dataDir = path.join(__dirname, 'data')
+const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(__dirname, 'data')
 const dbPath = path.join(dataDir, 'app-db.json')
 const port = Number(process.env.PORT ?? 3001)
 const LOGIN_PATTERN = /^[\x21-\x7E]+$/
@@ -121,15 +121,22 @@ function authRequired(req, res, next) {
 
 const app = express()
 
+function normalizeOrigin(origin) {
+  return String(origin ?? '').trim().replace(/\/$/, '')
+}
+
 const allowedOrigins = [
   'http://localhost:5173',
   'https://gos-exam-trainer.vercel.app',
   process.env.FRONTEND_URL,
-].filter(Boolean)
+  ...(process.env.FRONTEND_URLS ?? '').split(','),
+]
+  .map(normalizeOrigin)
+  .filter(Boolean)
 
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes(normalizeOrigin(origin))) {
       callback(null, true)
       return
     }
@@ -266,4 +273,5 @@ if (fs.existsSync(distDir)) {
 
 app.listen(port, '0.0.0.0', () => {
   console.log(`API server listening on http://127.0.0.1:${port}`)
+  console.log(`Data directory: ${dataDir}`)
 })

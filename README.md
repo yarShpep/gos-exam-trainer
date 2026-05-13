@@ -28,12 +28,39 @@ npm run dev
 
 Зарегистрированные пользователи, профили, попытки и статистика сохраняются на Node-сервере в `server/data/app-db.json`. Файл не коммитится в Git.
 
+В продакшене директория с этим файлом должна быть постоянным хранилищем. На Render обычная файловая система сервиса временная: данные, записанные приложением, могут пропасть после redeploy, restart или spin-down. Для Render нужно подключить Persistent Disk или заменить JSON-файл на внешнюю базу данных.
+
 Гостевой режим сохраняется только в `localStorage` текущего браузера:
 
 - `gos-exam-auth`: текущий профиль и локальные пользователи.
 - `gos-exam-progress`: попытки решения и агрегированная статистика по вопросам.
 
 Для синхронизации между устройствами нужно входить под одним логином на frontend, подключенном к одному и тому же Node API.
+
+## Деплой frontend + backend
+
+Frontend можно держать на Vercel, а Node API на Render.
+
+Для Vercel:
+
+- Build command: `npm run build`
+- Output directory: `dist`
+- Environment variable: `VITE_API_URL=https://АДРЕС-БЭКА-НА-RENDER.onrender.com/api`
+
+Для Render Web Service:
+
+- Build command: `npm install`
+- Start command: `npm run server`
+- Environment variable: `FRONTEND_URL=https://АДРЕС-ФРОНТА-НА-VERCEL.vercel.app`
+- Environment variable: `DATA_DIR=/var/data`
+
+Чтобы аккаунты не пропадали, подключи Render Persistent Disk с mount path `/var/data`. Если диск не подключен, `server/data/app-db.json` будет жить только во временной файловой системе сервиса.
+
+Если используется несколько frontend-доменов, можно указать их через запятую:
+
+```bash
+FRONTEND_URLS=https://site.vercel.app,https://preview.vercel.app
+```
 
 ## Импорт вопросов из markdown
 

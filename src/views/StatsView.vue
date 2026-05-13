@@ -11,6 +11,7 @@ import VChart from 'vue-echarts'
 import { useAuthStore } from '@/stores/auth'
 import { useExamStore } from '@/stores/exam'
 import type { AnswerFeedbackMode, AttemptStatus, TestAttempt } from '@/types/domain'
+import { getAccuracyPercent, getExamGrade } from '@/utils/grading'
 
 use([CanvasRenderer, BarChart, PieChart, GridComponent, TooltipComponent, LegendComponent])
 
@@ -50,7 +51,7 @@ const sectionStats = computed(() =>
         questionText: question.text,
         totalAnswers,
         correctAnswers,
-        accuracy: totalAnswers === 0 ? 0 : Math.round((correctAnswers / totalAnswers) * 100),
+        accuracy: getAccuracyPercent(correctAnswers, totalAnswers),
         lastAnsweredAt: stat?.lastAnsweredAt ?? '',
       }
     })
@@ -78,7 +79,8 @@ const sectionStats = computed(() =>
         totalAnswers,
         correctAnswers,
         wrongAnswers: totalAnswers - correctAnswers,
-        accuracy: totalAnswers === 0 ? 0 : Math.round((correctAnswers / totalAnswers) * 100),
+        accuracy: getAccuracyPercent(correctAnswers, totalAnswers),
+        grade: getExamGrade(getAccuracyPercent(correctAnswers, totalAnswers)),
         attemptsTotal: attempts.length,
         completedAttempts: attempts.filter((attempt) => attempt.status === 'completed').length,
       },
@@ -87,6 +89,9 @@ const sectionStats = computed(() =>
 )
 const totalCorrectAnswers = computed(() => sectionStats.value.reduce((sum, group) => sum + group.summary.correctAnswers, 0))
 const totalWrongAnswers = computed(() => sectionStats.value.reduce((sum, group) => sum + group.summary.wrongAnswers, 0))
+const totalAnswers = computed(() => totalCorrectAnswers.value + totalWrongAnswers.value)
+const overallAccuracy = computed(() => getAccuracyPercent(totalCorrectAnswers.value, totalAnswers.value))
+const overallGrade = computed(() => getExamGrade(overallAccuracy.value))
 const shortSectionNames = computed(() => sectionStats.value.map((group) => `Тема ${group.section.order}`))
 const sectionAccuracyChart = computed(() => ({
   tooltip: { trigger: 'axis' },
@@ -195,6 +200,16 @@ function getAttemptStatsLabel(attempt: TestAttempt) {
   return attempt.status === 'completed' ? 'Нет данных' : 'Еще не завершена'
 }
 
+function getAttemptGrade(attempt: TestAttempt) {
+  const correctAnswers = attempt.answers.filter((answer) => answer.checkedAt && answer.isCorrect).length
+  const accuracy = getAccuracyPercent(correctAnswers, attempt.questionIds.length)
+
+  return {
+    accuracy,
+    grade: getExamGrade(accuracy),
+  }
+}
+
 async function clearStatistics() {
   try {
     await ElMessageBox.confirm('Будут удалены попытки и статистика по вопросам в этом браузере.', 'Очистить статистику?', {
@@ -221,6 +236,26 @@ async function clearStatistics() {
       <el-button type="danger" plain :icon="Delete" @click="clearStatistics">Очистить статистику</el-button>
     </div>
 
+    <div class="metric-grid stats-overview">
+      <el-card shadow="never" class="metric-card">
+        <span>Ответов</span>
+        <strong>{{ totalAnswers }}</strong>
+      </el-card>
+      <el-card shadow="never" class="metric-card">
+        <span>Верных</span>
+        <strong>{{ totalCorrectAnswers }}</strong>
+      </el-card>
+      <el-card shadow="never" class="metric-card">
+        <span>Точность</span>
+        <strong>{{ overallAccuracy }}%</strong>
+      </el-card>
+      <el-card shadow="never" class="metric-card">
+        <span>Общая оценка</span>
+        <strong v-if="totalAnswers > 0" :class="`grade-badge grade-badge--${overallGrade.tone}`">{{ overallGrade.label }}</strong>
+        <strong v-else>—</strong>
+      </el-card>
+    </div>
+
     <el-collapse v-model="activeTopSections" class="stats-collapse">
       <el-collapse-item name="attempts">
         <template #title>
@@ -244,6 +279,14 @@ async function clearStatistics() {
           </el-table-column>
           <el-table-column label="Статистика" width="150">
             <template #default="{ row }">{{ getAttemptStatsLabel(row) }}</template>
+          </el-table-column>
+          <el-table-column label="Оценка" width="150">
+            <template #default="{ row }">
+              <span v-if="row.status === 'completed'" :class="`grade-badge grade-badge--${getAttemptGrade(row).grade.tone}`">
+                {{ getAttemptGrade(row).grade.label }} · {{ getAttemptGrade(row).accuracy }}%
+              </span>
+              <span v-else>—</span>
+            </template>
           </el-table-column>
           <el-table-column label="Начата">
             <template #default="{ row }">{{ formatDate(row.startedAt) }}</template>
@@ -304,6 +347,16 @@ async function clearStatistics() {
           <el-card shadow="never" class="metric-card">
             <span>Точность</span>
             <strong>{{ group.summary.accuracy }}%</strong>
+          </el-card>
+          <el-card shadow="never" class="metric-card">
+            <span>Оценка</span>
+            <strong
+              v-if="group.summary.totalAnswers > 0"
+              :class="`grade-badge grade-badge--${group.summary.grade.tone}`"
+            >
+              {{ group.summary.grade.label }}
+            </strong>
+            <strong v-else>—</strong>
           </el-card>
           <el-card shadow="never" class="metric-card">
             <span>Завершено попыток</span>

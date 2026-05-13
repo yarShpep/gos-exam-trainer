@@ -45,7 +45,13 @@ Frontend можно держать на Vercel, а Node API на Render.
 
 - Build command: `npm run build`
 - Output directory: `dist`
-- Environment variable: `VITE_API_URL=https://АДРЕС-БЭКА-НА-RENDER.onrender.com/api`
+- Environment variable: `VITE_API_URL=http://171.22.133.140/api`
+
+В репозитории также есть `.env.production`, поэтому обычная production-сборка фронта будет использовать backend на VPS:
+
+```bash
+VITE_API_URL=http://171.22.133.140/api
+```
 
 Для Render Web Service:
 

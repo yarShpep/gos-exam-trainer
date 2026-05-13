@@ -123,6 +123,7 @@ const app = express()
 
 const allowedOrigins = [
   'http://localhost:5173',
+  'https://gos-exam-trainer.vercel.app',
   process.env.FRONTEND_URL,
 ].filter(Boolean)
 
@@ -137,6 +138,8 @@ app.use(cors({
   },
   credentials: true,
 }))
+
+app.options('*', cors())
 
 app.use(express.json({ limit: '5mb' }))
 

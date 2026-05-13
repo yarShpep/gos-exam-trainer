@@ -1,7 +1,9 @@
 import { defineStore } from 'pinia'
 
+import { apiRequest } from '@/api/client'
 import { studyMaterials } from '@/data/materials'
 import { questionSections } from '@/data/questionBank'
+import { useAuthStore } from '@/stores/auth'
 import type {
   AnswerFeedbackMode,
   AttemptAnswer,
@@ -68,7 +70,22 @@ export const useExamStore = defineStore('exam', {
     sectionById: (state) => (sectionId: string) => state.sections.find((section) => section.id === sectionId) ?? null,
   },
   actions: {
-    hydrate() {
+    async hydrate() {
+      const authStore = useAuthStore()
+
+      if (authStore.token && authStore.currentUser) {
+        const saved = await apiRequest<{ attempts: TestAttempt[]; questionStats: Record<string, QuestionStat> }>(
+          '/progress',
+          {},
+          authStore.token,
+        )
+        this.attempts = saved.attempts
+        this.questionStatsByOwner = {
+          [authStore.currentUser.id]: saved.questionStats,
+        }
+        return
+      }
+
       const saved = loadJson<ExamProgressState & { questionStats?: Record<string, QuestionStat> }>(EXAM_STORAGE_KEY, {
         attempts: [],
         questionStatsByOwner: {},
@@ -79,8 +96,26 @@ export const useExamStore = defineStore('exam', {
       }
     },
     persist() {
+      const authStore = useAuthStore()
+
+      if (authStore.token && authStore.currentUser) {
+        const userId = authStore.currentUser.id
+        void apiRequest(
+          '/progress',
+          {
+            method: 'PUT',
+            body: JSON.stringify({
+              attempts: this.attempts.filter((attempt) => attempt.ownerId === userId),
+              questionStats: this.questionStatsByOwner[userId] ?? {},
+            }),
+          },
+          authStore.token,
+        )
+        return
+      }
+
       saveJson<ExamProgressState>(EXAM_STORAGE_KEY, {
-        attempts: this.attempts,
+        attempts: this.attempts.filter((attempt) => attempt.ownerId === 'guest'),
         questionStatsByOwner: this.questionStatsByOwner,
       })
     },

@@ -23,13 +23,19 @@ watchEffect(() => {
   form.groupName = authStore.currentUser.groupName ?? ''
 })
 
-function saveProfile() {
-  authStore.updateProfile(form)
+async function saveProfile() {
+  const error = await authStore.updateProfile(form)
+
+  if (error) {
+    ElMessage.error(error)
+    return
+  }
+
   ElMessage.success('Профиль сохранен')
 }
 
-function logout() {
-  authStore.logout()
+async function logout() {
+  await authStore.logout()
   router.push('/login')
 }
 </script>

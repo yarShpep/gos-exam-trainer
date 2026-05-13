@@ -13,9 +13,9 @@ const examStore = useExamStore()
 const activePath = computed(() => route.path)
 const userLabel = computed(() => authStore.displayName)
 
-onMounted(() => {
-  authStore.hydrate()
-  examStore.hydrate()
+onMounted(async () => {
+  await authStore.hydrate()
+  await examStore.hydrate()
 })
 </script>
 

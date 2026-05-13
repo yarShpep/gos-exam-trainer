@@ -4,30 +4,34 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
 import { useAuthStore } from '@/stores/auth'
+import { useExamStore } from '@/stores/exam'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const examStore = useExamStore()
 
 const mode = ref<'login' | 'register'>('login')
 const loginValue = ref('')
 const passwordValue = ref('')
 
-function submitAuth() {
+async function submitAuth() {
   const error =
     mode.value === 'login'
-      ? authStore.login(loginValue.value, passwordValue.value)
-      : authStore.register(loginValue.value, passwordValue.value)
+      ? await authStore.login(loginValue.value, passwordValue.value)
+      : await authStore.register(loginValue.value, passwordValue.value)
 
   if (error) {
     ElMessage.error(error)
     return
   }
 
+  await examStore.hydrate()
   router.push(mode.value === 'register' ? '/profile' : '/practice')
 }
 
 function continueAsGuest() {
   authStore.continueAsGuest()
+  void examStore.hydrate()
   router.push('/practice')
 }
 </script>

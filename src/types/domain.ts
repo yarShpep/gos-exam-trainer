@@ -9,7 +9,6 @@ export type UserRole = 'registered' | 'guest'
 export interface UserProfile {
   id: string
   login: string
-  password: string
   firstName?: string
   lastName?: string
   groupName?: string

@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "dev:client": "vite",
+    "dev:server": "node server/index.mjs",
+    "server": "node server/index.mjs",
     "build": "vue-tsc -b && vite build",
     "import:questions": "node scripts/import-md-questions.mjs",
     "preview": "vite preview"
@@ -13,6 +16,7 @@
     "@element-plus/icons-vue": "^2.3.1",
     "echarts": "^6.0.0",
     "element-plus": "^2.11.3",
+    "express": "^5.2.1",
     "pinia": "^3.0.4",
     "vue": "^3.5.32",
     "vue-echarts": "^8.0.1",

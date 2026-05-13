@@ -1,58 +1,25 @@
 import { defineStore } from 'pinia'
 
+import { apiRequest, type ApiAuthResponse } from '@/api/client'
 import type { UserProfile } from '@/types/domain'
-import { createId } from '@/utils/id'
-import { loadJson, saveJson } from '@/utils/storage'
 
-const AUTH_STORAGE_KEY = 'gos-exam-auth'
+const AUTH_TOKEN_STORAGE_KEY = 'gos-exam-auth-token'
 const LOGIN_PATTERN = /^[\x21-\x7E]+$/
 const PASSWORD_PATTERN = /^[\x21-\x7E]+$/
 
 interface AuthState {
-  users: UserProfile[]
-  currentUserId: string | null
-}
-
-interface LegacyUser {
-  id: string
-  name?: string
-  login?: string
-  password?: string
-  role: 'registered' | 'guest'
-  createdAt: string
-  lastSeenAt: string
-  firstName?: string
-  lastName?: string
-  groupName?: string
-}
-
-function normalizeLogin(login: string) {
-  return login.trim().toLowerCase()
-}
-
-function migrateUser(user: LegacyUser): UserProfile {
-  const login = user.login ?? user.name ?? 'user'
-
-  return {
-    id: user.id,
-    login,
-    password: user.password ?? '',
-    firstName: user.firstName,
-    lastName: user.lastName,
-    groupName: user.groupName,
-    role: 'registered',
-    createdAt: user.createdAt,
-    lastSeenAt: user.lastSeenAt,
-  }
+  currentUser: UserProfile | null
+  token: string | null
+  isReady: boolean
 }
 
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
-    users: [],
-    currentUserId: null,
+    currentUser: null,
+    token: null,
+    isReady: false,
   }),
   getters: {
-    currentUser: (state) => state.users.find((user) => user.id === state.currentUserId) ?? null,
     ownerId(): string {
       return this.currentUser?.id ?? 'guest'
     },
@@ -69,20 +36,25 @@ export const useAuthStore = defineStore('auth', {
     },
   },
   actions: {
-    hydrate() {
-      const saved = loadJson<{ users: LegacyUser[]; currentUserId: string | null }>(AUTH_STORAGE_KEY, {
-        users: [],
-        currentUserId: null,
-      })
-      this.users = saved.users.filter((user) => user.role === 'registered').map(migrateUser)
-      this.currentUserId = this.users.some((user) => user.id === saved.currentUserId) ? saved.currentUserId : null
-      this.persist()
-    },
-    persist() {
-      saveJson<AuthState>(AUTH_STORAGE_KEY, {
-        users: this.users,
-        currentUserId: this.currentUserId,
-      })
+    async hydrate() {
+      this.token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
+
+      if (!this.token) {
+        this.currentUser = null
+        this.isReady = true
+        return
+      }
+
+      try {
+        const payload = await apiRequest<{ user: UserProfile }>('/auth/me', {}, this.token)
+        this.currentUser = payload.user
+      } catch {
+        this.token = null
+        this.currentUser = null
+        localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+      } finally {
+        this.isReady = true
+      }
     },
     validateLogin(login: string) {
       const value = login.trim()
@@ -108,7 +80,7 @@ export const useAuthStore = defineStore('auth', {
 
       return ''
     },
-    register(login: string, password: string) {
+    async register(login: string, password: string) {
       const loginError = this.validateLogin(login)
       const passwordError = this.validatePassword(password)
 
@@ -116,58 +88,66 @@ export const useAuthStore = defineStore('auth', {
         return loginError || passwordError
       }
 
-      const normalizedLogin = normalizeLogin(login)
-
-      if (this.users.some((user) => normalizeLogin(user.login) === normalizedLogin)) {
-        return 'Такой логин уже занят.'
+      try {
+        const payload = await apiRequest<ApiAuthResponse<UserProfile>>('/auth/register', {
+          method: 'POST',
+          body: JSON.stringify({ login, password }),
+        })
+        this.token = payload.token
+        this.currentUser = payload.user
+        localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, payload.token)
+        return ''
+      } catch (error) {
+        return error instanceof Error ? error.message : 'Не удалось зарегистрироваться.'
       }
-
-      const now = new Date().toISOString()
-      const user: UserProfile = {
-        id: createId('user'),
-        login: login.trim(),
-        password,
-        role: 'registered',
-        createdAt: now,
-        lastSeenAt: now,
-      }
-
-      this.users.push(user)
-      this.currentUserId = user.id
-      this.persist()
-      return ''
     },
-    login(login: string, password: string) {
-      const normalizedLogin = normalizeLogin(login)
-      const user = this.users.find((candidate) => normalizeLogin(candidate.login) === normalizedLogin)
-
-      if (!user || user.password !== password) {
-        return 'Неверный логин или пароль.'
+    async login(login: string, password: string) {
+      try {
+        const payload = await apiRequest<ApiAuthResponse<UserProfile>>('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ login, password }),
+        })
+        this.token = payload.token
+        this.currentUser = payload.user
+        localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, payload.token)
+        return ''
+      } catch (error) {
+        return error instanceof Error ? error.message : 'Не удалось войти.'
       }
-
-      user.lastSeenAt = new Date().toISOString()
-      this.currentUserId = user.id
-      this.persist()
-      return ''
     },
     continueAsGuest() {
-      this.currentUserId = null
-      this.persist()
+      this.token = null
+      this.currentUser = null
+      localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
     },
-    updateProfile(payload: { firstName: string; lastName: string; groupName: string }) {
-      if (!this.currentUser) {
-        return
+    async updateProfile(payload: { firstName: string; lastName: string; groupName: string }) {
+      if (!this.token) {
+        return 'Требуется вход.'
       }
 
-      this.currentUser.firstName = payload.firstName.trim()
-      this.currentUser.lastName = payload.lastName.trim()
-      this.currentUser.groupName = payload.groupName.trim()
-      this.currentUser.lastSeenAt = new Date().toISOString()
-      this.persist()
+      try {
+        const response = await apiRequest<{ user: UserProfile }>(
+          '/profile',
+          {
+            method: 'PUT',
+            body: JSON.stringify(payload),
+          },
+          this.token,
+        )
+        this.currentUser = response.user
+        return ''
+      } catch (error) {
+        return error instanceof Error ? error.message : 'Не удалось сохранить профиль.'
+      }
     },
-    logout() {
-      this.currentUserId = null
-      this.persist()
+    async logout() {
+      if (this.token) {
+        await apiRequest('/auth/logout', { method: 'POST' }, this.token).catch(() => undefined)
+      }
+
+      this.token = null
+      this.currentUser = null
+      localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
     },
   },
 })

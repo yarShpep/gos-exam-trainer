@@ -11,6 +11,7 @@ import type {
   QuestionSection,
   QuestionStat,
   StudyMaterial,
+  TestDifficulty,
   TestAttempt,
 } from '@/types/domain'
 import { createId } from '@/utils/id'
@@ -35,6 +36,21 @@ function shuffleQuestions<T>(items: T[]) {
 
 function sampleQuestions<T>(items: T[], count: number) {
   return shuffleQuestions(items).slice(0, count)
+}
+
+function getOptionIdsForDifficulty(question: ExamQuestion, difficulty: TestDifficulty) {
+  if (difficulty === 'hard' || question.options.length <= 4) {
+    return shuffleQuestions(question.options).map((option) => option.id)
+  }
+
+  const correctOption = question.options.find((option) => option.id === question.correctOptionId)
+  const distractors = question.options.filter((option) => option.id !== question.correctOptionId)
+
+  if (!correctOption) {
+    return shuffleQuestions(question.options).slice(0, 4).map((option) => option.id)
+  }
+
+  return shuffleQuestions([correctOption, ...sampleQuestions(distractors, 3)]).map((option) => option.id)
 }
 
 interface ExamProgressState {
@@ -169,10 +185,10 @@ export const useExamStore = defineStore('exam', {
 
       return sectionsWithQuestions.flatMap((section) => shuffleQuestions(selectedBySection.get(section.id) ?? []))
     },
-    startAttempt(ownerId: string, sectionId: string | 'all', mode: AnswerFeedbackMode) {
+    startAttempt(ownerId: string, sectionId: string | 'all', mode: AnswerFeedbackMode, difficulty: TestDifficulty) {
       const questions = this.generateQuestionSet(sectionId)
       const optionOrderByQuestionId = Object.fromEntries(
-        questions.map((question) => [question.id, shuffleQuestions(question.options).map((option) => option.id)]),
+        questions.map((question) => [question.id, getOptionIdsForDifficulty(question, difficulty)]),
       )
 
       this.attempts
@@ -188,6 +204,7 @@ export const useExamStore = defineStore('exam', {
         ownerId,
         sectionId,
         mode,
+        difficulty,
         status: 'active',
         questionIds: questions.map((question) => question.id),
         optionOrderByQuestionId,
@@ -277,7 +294,7 @@ export const useExamStore = defineStore('exam', {
           const question = this.questionById(answer.questionId)
 
           if (question) {
-            this.recordQuestionStat(attempt.ownerId, question, answer)
+            this.recordQuestionStat(attempt.ownerId, question, answer, attempt.difficulty ?? 'hard')
           }
         })
         attempt.statsRecordedAt = now
@@ -297,7 +314,7 @@ export const useExamStore = defineStore('exam', {
       this.questionStatsByOwner[ownerId] = {}
       this.persist()
     },
-    recordQuestionStat(ownerId: string, question: ExamQuestion, answer: AttemptAnswer) {
+    recordQuestionStat(ownerId: string, question: ExamQuestion, answer: AttemptAnswer, difficulty: TestDifficulty) {
       const ownerStats = this.questionStatsByOwner[ownerId] ?? {}
       const current = ownerStats[question.id] ?? {
         questionId: question.id,
@@ -310,6 +327,19 @@ export const useExamStore = defineStore('exam', {
       current.correctAnswers += answer.isCorrect ? 1 : 0
       current.optionHits[answer.selectedOptionId] = (current.optionHits[answer.selectedOptionId] ?? 0) + 1
       current.lastAnsweredAt = answer.checkedAt ?? answer.answeredAt
+      const currentDifficulty = current.difficultyStats?.[difficulty] ?? {
+        totalAnswers: 0,
+        correctAnswers: 0,
+        optionHits: {},
+      }
+      currentDifficulty.totalAnswers += 1
+      currentDifficulty.correctAnswers += answer.isCorrect ? 1 : 0
+      currentDifficulty.optionHits[answer.selectedOptionId] = (currentDifficulty.optionHits[answer.selectedOptionId] ?? 0) + 1
+      currentDifficulty.lastAnsweredAt = answer.checkedAt ?? answer.answeredAt
+      current.difficultyStats = {
+        ...current.difficultyStats,
+        [difficulty]: currentDifficulty,
+      }
       ownerStats[question.id] = current
       this.questionStatsByOwner[ownerId] = ownerStats
     },

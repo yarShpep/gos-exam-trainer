@@ -1,5 +1,7 @@
 export type AnswerFeedbackMode = 'immediate' | 'deferred'
 
+export type TestDifficulty = 'normal' | 'hard'
+
 export type AttemptStatus = 'active' | 'completed' | 'abandoned'
 
 export type AttemptCompletionReason = 'finished' | 'finished_early'
@@ -65,6 +67,7 @@ export interface TestAttempt {
   ownerId: string
   sectionId: string | 'all'
   mode: AnswerFeedbackMode
+  difficulty?: TestDifficulty
   status: AttemptStatus
   completionReason?: AttemptCompletionReason
   questionIds: string[]
@@ -80,6 +83,14 @@ export interface TestAttempt {
 
 export interface QuestionStat {
   questionId: string
+  totalAnswers: number
+  correctAnswers: number
+  optionHits: Record<string, number>
+  lastAnsweredAt?: string
+  difficultyStats?: Partial<Record<TestDifficulty, QuestionStatBreakdown>>
+}
+
+export interface QuestionStatBreakdown {
   totalAnswers: number
   correctAnswers: number
   optionHits: Record<string, number>

@@ -10,7 +10,7 @@ import VChart from 'vue-echarts'
 
 import { useAuthStore } from '@/stores/auth'
 import { useExamStore } from '@/stores/exam'
-import type { AnswerFeedbackMode, AttemptStatus, TestAttempt } from '@/types/domain'
+import type { AnswerFeedbackMode, AttemptStatus, TestAttempt, TestDifficulty } from '@/types/domain'
 import { getAccuracyPercent, getExamGrade } from '@/utils/grading'
 
 use([CanvasRenderer, BarChart, PieChart, GridComponent, TooltipComponent, LegendComponent])
@@ -35,6 +35,10 @@ const statusTypes: Record<AttemptStatus, 'primary' | 'success' | 'warning'> = {
 const modeLabels: Record<AnswerFeedbackMode, string> = {
   immediate: 'Проверка сразу',
   deferred: 'Проверка после всех вопросов',
+}
+const difficultyLabels: Record<TestDifficulty, string> = {
+  normal: 'Обычный',
+  hard: 'Сложный',
 }
 
 const ownerAttempts = computed(() => examStore.attempts.filter((attempt) => attempt.ownerId === authStore.ownerId))
@@ -92,6 +96,28 @@ const totalWrongAnswers = computed(() => sectionStats.value.reduce((sum, group) 
 const totalAnswers = computed(() => totalCorrectAnswers.value + totalWrongAnswers.value)
 const overallAccuracy = computed(() => getAccuracyPercent(totalCorrectAnswers.value, totalAnswers.value))
 const overallGrade = computed(() => getExamGrade(overallAccuracy.value))
+const difficultyStats = computed(() =>
+  (['normal', 'hard'] as const).map((difficulty) => {
+    const totals = Object.values(ownerQuestionStats.value).reduce(
+      (summary, stat) => {
+        const difficultyStat = stat.difficultyStats?.[difficulty]
+
+        return {
+          totalAnswers: summary.totalAnswers + (difficultyStat?.totalAnswers ?? 0),
+          correctAnswers: summary.correctAnswers + (difficultyStat?.correctAnswers ?? 0),
+        }
+      },
+      { totalAnswers: 0, correctAnswers: 0 },
+    )
+
+    return {
+      difficulty,
+      label: difficultyLabels[difficulty],
+      ...totals,
+      accuracy: getAccuracyPercent(totals.correctAnswers, totals.totalAnswers),
+    }
+  }),
+)
 const shortSectionNames = computed(() => sectionStats.value.map((group) => `Тема ${group.section.order}`))
 const sectionAccuracyChart = computed(() => ({
   tooltip: { trigger: 'axis' },
@@ -164,6 +190,20 @@ const attemptsStatusChart = computed(() => ({
     },
   ],
 }))
+const difficultyAccuracyChart = computed(() => ({
+  tooltip: { trigger: 'axis' },
+  grid: { left: 36, right: 18, top: 16, bottom: 30 },
+  xAxis: { type: 'category', data: difficultyStats.value.map((stat) => stat.label) },
+  yAxis: { type: 'value', max: 100 },
+  series: [
+    {
+      name: 'Точность, %',
+      type: 'bar',
+      data: difficultyStats.value.map((stat) => stat.accuracy),
+      itemStyle: { color: '#f59e0b', borderRadius: [6, 6, 0, 0] },
+    },
+  ],
+}))
 
 function formatDate(value?: string) {
   if (!value) {
@@ -198,6 +238,10 @@ function getAttemptStatsLabel(attempt: TestAttempt) {
   }
 
   return attempt.status === 'completed' ? 'Нет данных' : 'Еще не завершена'
+}
+
+function getDifficultyLabel(difficulty?: TestDifficulty) {
+  return difficulty ? difficultyLabels[difficulty] : 'Не указана'
 }
 
 function getAttemptGrade(attempt: TestAttempt) {
@@ -274,6 +318,9 @@ async function clearStatistics() {
           <el-table-column label="Режим" width="230">
             <template #default="{ row }">{{ modeLabels[row.mode as AnswerFeedbackMode] }}</template>
           </el-table-column>
+          <el-table-column label="Сложность" width="130">
+            <template #default="{ row }">{{ getDifficultyLabel(row.difficulty as TestDifficulty | undefined) }}</template>
+          </el-table-column>
           <el-table-column label="Раздел" width="130">
             <template #default="{ row }">{{ getSectionLabel(row.sectionId) }}</template>
           </el-table-column>
@@ -301,7 +348,7 @@ async function clearStatistics() {
         <template #title>
           <div class="stats-section-title">
             <strong>Графики</strong>
-            <span>4 диаграммы</span>
+            <span>5 диаграмм</span>
           </div>
         </template>
 
@@ -321,6 +368,10 @@ async function clearStatistics() {
           <div class="chart-panel">
             <h2>Попытки по статусам</h2>
             <VChart class="chart" :option="attemptsStatusChart" autoresize />
+          </div>
+          <div class="chart-panel">
+            <h2>Точность по сложности</h2>
+            <VChart class="chart" :option="difficultyAccuracyChart" autoresize />
           </div>
         </div>
       </el-collapse-item>

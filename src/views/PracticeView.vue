@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, Finished, RefreshRight, Select } from '@element-
 
 import { useAuthStore } from '@/stores/auth'
 import { useExamStore } from '@/stores/exam'
-import type { AnswerFeedbackMode, ExamQuestion, TestAttempt } from '@/types/domain'
+import type { AnswerFeedbackMode, ExamQuestion, TestAttempt, TestDifficulty } from '@/types/domain'
 import { getAccuracyPercent, getExamGrade } from '@/utils/grading'
 
 const authStore = useAuthStore()
@@ -12,6 +12,7 @@ const examStore = useExamStore()
 
 const selectedSectionId = ref<string | 'all'>('all')
 const selectedMode = ref<AnswerFeedbackMode>('immediate')
+const selectedDifficulty = ref<TestDifficulty>('normal')
 const finishDialogVisible = ref(false)
 const saveFinishedStats = ref(true)
 const finishEarly = ref(false)
@@ -148,7 +149,7 @@ const result = computed(() => {
 })
 
 function startAttempt() {
-  currentAttempt.value = examStore.startAttempt(ownerId.value, selectedSectionId.value, selectedMode.value)
+  currentAttempt.value = examStore.startAttempt(ownerId.value, selectedSectionId.value, selectedMode.value, selectedDifficulty.value)
 }
 
 function startSectionAttempt(sectionId: string) {
@@ -157,11 +158,28 @@ function startSectionAttempt(sectionId: string) {
 }
 
 function restartAttempt() {
-  currentAttempt.value = examStore.startAttempt(ownerId.value, selectedSectionId.value, selectedMode.value)
+  const attempt = workingAttempt.value
+  const sectionId = attempt?.sectionId ?? selectedSectionId.value
+  const mode = attempt?.mode ?? selectedMode.value
+  const difficulty = attempt?.difficulty ?? selectedDifficulty.value
+
+  selectedSectionId.value = sectionId
+  selectedMode.value = mode
+  selectedDifficulty.value = difficulty
+  currentAttempt.value = examStore.startAttempt(ownerId.value, sectionId, mode, difficulty)
 }
 
 function resumeAttempt() {
-  currentAttempt.value = activeAttempt.value
+  const attempt = activeAttempt.value
+
+  if (!attempt) {
+    return
+  }
+
+  selectedSectionId.value = attempt.sectionId
+  selectedMode.value = attempt.mode
+  selectedDifficulty.value = attempt.difficulty ?? 'hard'
+  currentAttempt.value = attempt
 }
 
 function goPrevious() {
@@ -213,16 +231,27 @@ function finishAttempt() {
     </div>
 
     <el-card v-if="!workingAttempt" shadow="never" class="setup-card">
-      <div class="setup-grid compact">
+      <div class="setup-grid">
         <el-form-item label="Проверка ответов">
           <el-radio-group v-model="selectedMode" class="mode-toggle">
             <el-radio value="immediate" border>Сразу</el-radio>
             <el-radio value="deferred" border>После всех вопросов</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="Сложность">
+          <el-radio-group v-model="selectedDifficulty" class="mode-toggle">
+            <el-radio value="normal" border>Обычный</el-radio>
+            <el-radio value="hard" border>Сложный</el-radio>
+          </el-radio-group>
+        </el-form-item>
       </div>
 
-      <el-alert type="info" show-icon :closable="false" title="Вопросы и варианты ответов перемешиваются при старте каждой новой попытки." />
+      <el-alert
+        type="info"
+        show-icon
+        :closable="false"
+        title="Обычный режим показывает 4 варианта ответа, сложный — все. Вопросы и варианты перемешиваются при каждой новой попытке."
+      />
 
       <div class="button-row">
         <el-button type="primary" size="large" :icon="Select" :disabled="selectedQuestionCount === 0" @click="startAttempt">
@@ -254,6 +283,8 @@ function finishAttempt() {
             {{ currentSection?.title }}
             ·
             {{ workingAttempt.mode === 'immediate' ? 'Проверка сразу' : 'Проверка после завершения' }}
+            ·
+            {{ workingAttempt.difficulty === 'normal' ? 'Обычный' : 'Сложный' }}
           </span>
         </div>
         <div class="toolbar-actions">
